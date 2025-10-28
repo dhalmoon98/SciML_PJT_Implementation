@@ -24,9 +24,8 @@ device = get_device()
 print(f"Using device: {device}")
 
 # ======================
-# Analytical Solutions & Forcing Term
+# Analytical Solutions & Forcing Term (same as before)
 # ======================
-
 def theta_exact_np(x,t):
     return ((np.pi / 2.0)*np.cos(x) + (x - np.pi/2.0)) * np.cos(t)
 
@@ -58,7 +57,7 @@ def to_device_batch(dct, device):
     return out
 
 # ======================
-# Data Preparation
+# Data Preparation (noisy only, same keys as before)
 # ======================
 def make_inverse_single_beam_data(
         Ni = 200, Nb=400, Nint = 1000, Ndata=5000,
@@ -82,80 +81,59 @@ def make_inverse_single_beam_data(
         # Boundary Condition
         t_b = np.random.uniform(0.0,1.0,size=(Nb,1))
         half = Nb // 2
-        x_b_left, t_b_left = np.zeros((half,1)), t_b[:half]
+        x_b_left,  t_b_left  = np.zeros((half,1)), t_b[:half]
         x_b_right, t_b_right = np.full((Nb-half, 1), np.pi), t_b[half:]
-        theta_b_left = np.zeros_like(x_b_left)
-        w_b_left     = np.zeros_like(x_b_left)
+        theta_b_left  = np.zeros_like(x_b_left)
+        w_b_left      = np.zeros_like(x_b_left)
         theta_b_right = np.zeros_like(x_b_right)
         w_b_right     = np.zeros_like(x_b_right)
 
-        # Observed data
-        per = Ndata // len(x_obs)   # How many data points per sensor
+        # Observed data (noisy)
+        per = Ndata // len(x_obs)
         rem = Ndata - per * len(x_obs)
-        xs, ts = [], []     # Store x and t values at observation points
+        xs, ts = [], []
         for i, xl in enumerate(x_obs):
-                n = per + (1 if i < rem else 0)
-                xs.append(np.full((n,1), xl))   # Fix x value with differing time
-                ts.append(np.random.uniform(0.0,1.0, size = (n,1)))
+            n = per + (1 if i < rem else 0)
+            xs.append(np.full((n,1), xl))
+            ts.append(np.random.uniform(0.0,1.0, size=(n,1)))
+        x_data = np.vstack(xs)
+        t_data = np.vstack(ts)
 
-        x_data = np.vstack(xs)  # Shape : (Ndata, 1)
-        t_data = np.vstack(ts)  # Shape : (Ndata, 1)
-
-        # Clean observation (no noise)
         theta_data = theta_exact_np(x_data, t_data)
         w_data     = w_exact_np(x_data, t_data)
-
-        # Noisy observation
         theta_data_noisy = add_relative_noise(theta_data, theta_rel_noise)
         w_data_noisy     = add_relative_noise(w_data,     w_rel_noise)
 
-        # Compute scaling bounds for normalization
+        # Scaling bounds
         X_true = np.hstack((
-                np.vstack([x_int, x_i, x_b_left, x_b_right, x_data]),
-                np.vstack([t_int, t_i, t_b_left, t_b_right, t_data])
+            np.vstack([x_int, x_i, x_b_left, x_b_right, x_data]),
+            np.vstack([t_int, t_i, t_b_left, t_b_right, t_data])
         ))
         lb = X_true.min(axis=0)
         ub = X_true.max(axis=0)
 
         data = {
-        "x_int": to_torch(x_int), "t_int": to_torch(t_int), "g_int": to_torch(g_int),
-        "x_i": to_torch(x_i), "t_i": to_torch(t_i),
-        "theta_i": to_torch(theta_i), "w_i": to_torch(w_i),
-        "theta_t_i": to_torch(theta_t_i), "w_t_i": to_torch(w_t_i),
-        "x_b_left": to_torch(x_b_left), "t_b_left": to_torch(t_b_left),
-        "theta_b_left": to_torch(theta_b_left), "w_b_left": to_torch(w_b_left),
-        "x_b_right": to_torch(x_b_right), "t_b_right": to_torch(t_b_right),
-        "theta_b_right": to_torch(theta_b_right), "w_b_right": to_torch(w_b_right),
-        "x_data": to_torch(x_data), "t_data": to_torch(t_data),
-
-        # noisy
-        "theta_obs": to_torch(theta_data_noisy), "w_obs": to_torch(w_data_noisy),
-
-        # clean
-        "theta_obs_clean": to_torch(theta_data), "w_obs_clean": to_torch(w_data),
-
-        "lb": to_torch(lb),
-        "ub": to_torch(ub),
+            "x_int": to_torch(x_int), "t_int": to_torch(t_int), "g_int": to_torch(g_int),
+            "x_i": to_torch(x_i), "t_i": to_torch(t_i),
+            "theta_i": to_torch(theta_i), "w_i": to_torch(w_i),
+            "theta_t_i": to_torch(theta_t_i), "w_t_i": to_torch(w_t_i),
+            "x_b_left": to_torch(x_b_left), "t_b_left": to_torch(t_b_left),
+            "theta_b_left": to_torch(theta_b_left), "w_b_left": to_torch(w_b_left),
+            "x_b_right": to_torch(x_b_right), "t_b_right": to_torch(t_b_right),
+            "theta_b_right": to_torch(theta_b_right), "w_b_right": to_torch(w_b_right),
+            "x_data": to_torch(x_data), "t_data": to_torch(t_data),
+            "theta_obs": to_torch(theta_data_noisy), "w_obs": to_torch(w_data_noisy),
+            "lb": to_torch(lb),
+            "ub": to_torch(ub),
         }
-
         return data
 
 # ======================
-# Build data
-# ======================
-data = make_inverse_single_beam_data()
-
-lower_bound = data["lb"]
-upper_bound = data["ub"]
-
-# ======================
-# PINNs Network
+# Models: Soft vs Hard BC
 # ======================
 class PINN(nn.Module):
     def __init__(self, lower_bound, upper_bound, input_size = 2, hidden_size=20, output_size = 2, num_layers=4):
         super().__init__()
-
-        # upper & lower bound for normalization
         lb = lower_bound.view(1,-1).to(torch.float32)
         ub = upper_bound.view(1,-1).to(torch.float32)
         self.register_buffer("lb", lb)
@@ -176,17 +154,52 @@ class PINN(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        # feature scaling
         if not torch.is_tensor(x):
             x = torch.from_numpy(x)
         x = x.to(self.lb.device, dtype=torch.float32)
-        x = (x - self.lb) / (self.ub - self.lb)
-        # Forward
-        y = self.network(x)
-        return y    # y[:, :1]=theta, y[:, 1:2]=w
+        x_scaled = (x - self.lb) / (self.ub - self.lb)
+        y = self.network(x_scaled)
+        return y  # [:,0]=θ, [:,1]=w
+
+class PINN_Hard(nn.Module):
+    def __init__(self, lower_bound, upper_bound, input_size = 2, hidden_size=20, output_size = 2, num_layers=4):
+        super().__init__()
+        lb = lower_bound.view(1,-1).to(torch.float32)
+        ub = upper_bound.view(1,-1).to(torch.float32)
+        self.register_buffer("lb", lb)
+        self.register_buffer("ub", ub)
+
+        layers = []
+        layers.append(nn.Linear(input_size, hidden_size))
+        layers.append(nn.Tanh())
+        for _ in range(num_layers-1):
+            layers.append(nn.Linear(hidden_size, hidden_size))
+            layers.append(nn.Tanh())
+        layers.append(nn.Linear(hidden_size, output_size))
+        self.network = nn.Sequential(*layers)
+
+        for m in self.network:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight, gain=1.0)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        if not torch.is_tensor(x):
+            x = torch.from_numpy(x)
+        x = x.to(self.lb.device, dtype=torch.float32)
+
+        # scale for NN
+        x_scaled = (x - self.lb) / (self.ub - self.lb)
+        y = self.network(x_scaled)         # raw outputs
+
+        # hard BC envelope using *original* x (first column)
+        xr = x[:, :1]                      # [N,1]
+        s  = (4.0 / (torch.pi**2)) * xr * (torch.pi - xr)  # s(0)=s(π)=0, s∈[0,1]
+        y_hard = torch.cat([s*y[:, :1], s*y[:, 1:2]], dim=1)
+        return y_hard
 
 # ======================
-# Loss Functions
+# Loss Functions (same as before)
 # ======================
 def loss_pde(model, alpha, x_int, t_int, g_int):
     x = x_int.detach().requires_grad_(True)
@@ -265,20 +278,18 @@ def total_loss(model, alpha, data, weights = (1.0, 1.0, 1.0, 1.0)):
     return L, terms
 
 # ======================
-# Training (L-BFGS)
+# Training (L-BFGS, same API)
 # ======================
-def train_pinn(model, alpha, data, epochs = 5000, lr = 1e-3, weights = (1.0, 1.0, 1.0, 1.0)):
+def train_pinn(model, alpha, data, epochs = 5000, lr = 1.0, weights = (1.0, 1.0, 1.0, 1.0)):
     optimizer = optim.LBFGS(
         list(model.parameters()) + [alpha],
-        lr=1.0,
+        lr=lr,
         max_iter=1,
         history_size=100,
         line_search_fn="strong_wolfe"
     )
-
     losses = []
     pbar = tqdm(range(epochs), desc="Training PINN (L-BFGS)")
-
     for ep in pbar:
         def closure():
             optimizer.zero_grad()
@@ -286,11 +297,9 @@ def train_pinn(model, alpha, data, epochs = 5000, lr = 1e-3, weights = (1.0, 1.0
             L.backward()
             closure.loss, closure.terms = L, terms
             return L
-
         optimizer.step(closure)
         L, terms = closure.loss, closure.terms
         losses.append(L.item())
-
         if ep % 100 == 0:
             pbar.set_postfix({
                 "Loss": f"{L.item():.3e}",
@@ -300,63 +309,203 @@ def train_pinn(model, alpha, data, epochs = 5000, lr = 1e-3, weights = (1.0, 1.0
                 "DATA": f"{terms['data'].item():.2e}",
                 "alpha": f"{alpha.item():.6f}",
             })
-
     pbar.close()
     return model, alpha, losses
 
 # ======================
-# Experiment: Noisy vs Clean
+# Evaluation helpers for BC
 # ======================
+@torch.no_grad()
+def evaluate_boundary_stats(model, data):
+    """Mean/Max of predicted |theta|, |w| at boundary points"""
+    # left
+    Xl = torch.cat([data["x_b_left"], data["t_b_left"]], dim=1)
+    ul = model(Xl)
+    th_l, w_l = split_theta_w(ul)
+    # right
+    Xr = torch.cat([data["x_b_right"], data["t_b_right"]], dim=1)
+    ur = model(Xr)
+    th_r, w_r = split_theta_w(ur)
 
-# 1) noisy dataset
-data_noisy = to_device_batch(data.copy(), device)
+    th_all = torch.cat([th_l, th_r], dim=0).abs()
+    w_all  = torch.cat([w_l,  w_r],  dim=0).abs()
 
-# 2) clean dataset
-data_clean = data.copy()
-data_clean["theta_obs"] = data_clean["theta_obs_clean"]
-data_clean["w_obs"]     = data_clean["w_obs_clean"]
-data_clean = to_device_batch(data_clean, device)
+    stats = {
+        "theta_mean": th_all.mean().item(),
+        "theta_max":  th_all.max().item(),
+        "w_mean":     w_all.mean().item(),
+        "w_max":      w_all.max().item(),
+    }
+    return stats
 
-# bounds
-lower_bound = data["lb"]
-upper_bound = data["ub"]
+@torch.no_grad()
+def plot_boundary_scatter(models, labels, data):
+    colors = ["C0", "C3", "C2", "C1"]
+    plt.figure(figsize=(7,5))
+    # 왼쪽 경계 x=0
+    tL = data["t_b_left"].detach().cpu().numpy().ravel()
+    # 오른쪽 경계 x=π
+    tR = data["t_b_right"].detach().cpu().numpy().ravel()
+    for i, (model, lab) in enumerate(zip(models, labels)):
+        # left
+        yL = model(torch.cat([data["x_b_left"], data["t_b_left"]], dim=1))
+        thL, wL = split_theta_w(yL)
+        # right
+        yR = model(torch.cat([data["x_b_right"], data["t_b_right"]], dim=1))
+        thR, wR = split_theta_w(yR)
 
-# Noisy data training
-torch.manual_seed(42); np.random.seed(42)
-model = PINN(lower_bound, upper_bound, input_size=2, hidden_size=20, output_size=2, num_layers=4).to(device)
-alpha = nn.Parameter(torch.tensor([1.0], dtype=torch.float32, device=device), requires_grad=True)
+        thL = thL.detach().cpu().numpy().ravel()
+        wL  = wL.detach().cpu().numpy().ravel()
+        thR = thR.detach().cpu().numpy().ravel()
+        wR  = wR.detach().cpu().numpy().ravel()
+
+        # 왼쪽
+        plt.scatter(tL, thL, s=8, alpha=0.5, color=colors[i%len(colors)], label=f"{lab}: θ @x=0")
+        plt.scatter(tL, wL,  s=8, alpha=0.5, color=colors[i%len(colors)], marker='x', label=f"{lab}: w @x=0")
+        # 오른쪽
+        plt.scatter(tR, thR, s=8, alpha=0.5, color=colors[i%len(colors)], label=f"{lab}: θ @x=π")
+        plt.scatter(tR, wR,  s=8, alpha=0.5, color=colors[i%len(colors)], marker='x', label=f"{lab}: w @x=π")
+
+    plt.axhline(0.0, color="k", lw=1)
+    plt.xlabel("t"); plt.ylabel("prediction at boundary")
+    plt.title("Boundary predictions (soft vs hard)")
+    plt.legend(fontsize=8, ncol=2)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+# ======================
+# Run experiment: soft vs hard
+# ======================
+# 1) build data (noisy), move to device
+data = make_inverse_single_beam_data()
+data = to_device_batch(data, device)
+lower_bound = data["lb"]; upper_bound = data["ub"]
+
 epochs = 5000
-model_trained_noisy, alpha_learned_noisy, losses_noisy = train_pinn(
-    model, alpha, data_noisy,
-    epochs=epochs, lr=1.0, weights=(1.0, 1.0, 1.0, 1.0)
-)
 
-# Clean data training
+# ---- SOFT ----
 torch.manual_seed(42); np.random.seed(42)
-model = PINN(lower_bound, upper_bound, input_size=2, hidden_size=20, output_size=2, num_layers=4).to(device)
-alpha = nn.Parameter(torch.tensor([1.0], dtype=torch.float32, device=device), requires_grad=True)
-model_trained_clean, alpha_learned_clean, losses_clean = train_pinn(
-    model, alpha, data_clean,
+model_soft = PINN(lower_bound, upper_bound, input_size=2, hidden_size=20, output_size=2, num_layers=4).to(device)
+alpha_soft = nn.Parameter(torch.tensor([1.0], dtype=torch.float32, device=device), requires_grad=True)
+model_soft_tr, alpha_soft_tr, losses_soft = train_pinn(
+    model_soft, alpha_soft, data,
     epochs=epochs, lr=1.0, weights=(1.0, 1.0, 1.0, 1.0)
 )
 
-# Result
-true_alpha = 1.0
-a_n = alpha_learned_noisy.item()
-a_c = alpha_learned_clean.item()
-err_n = abs(a_n - true_alpha)/true_alpha*100
-err_c = abs(a_c - true_alpha)/true_alpha*100
+# ---- HARD ----
+torch.manual_seed(42); np.random.seed(42)
+model_hard = PINN_Hard(lower_bound, upper_bound, input_size=2, hidden_size=20, output_size=2, num_layers=4).to(device)
+alpha_hard = nn.Parameter(torch.tensor([1.0], dtype=torch.float32, device=device), requires_grad=True)
+model_hard_tr, alpha_hard_tr, losses_hard = train_pinn(
+    model_hard, alpha_hard, data,
+    epochs=epochs, lr=1.0, weights=(1.0, 1.0, 0.0, 1.0)
+)
 
-print(f"\n[NOISY ] alpha = {a_n:.6f} (rel. err {err_n:.3f}%)")
-print(f"[CLEAN ] alpha = {a_c:.6f} (rel. err {err_c:.3f}%)")
+# ======================
+# Compare results
+# ======================
+a_s = alpha_soft_tr.item()
+a_h = alpha_hard_tr.item()
+print(f"\n[SOFT] alpha = {a_s:.6f}")
+print(f"[HARD] alpha = {a_h:.6f}")
 
-# Lost curve comparison
 plt.figure()
-plt.plot(losses_noisy, label=f"NOISY (α={a_n:.4f})")
-plt.plot(losses_clean, label=f"CLEAN (α={a_c:.4f})")
-plt.xlabel("Iteration")
-plt.ylabel("Total Loss")
-plt.title("PINN (L-BFGS) – Noisy vs. Clean Observation")
+plt.plot(losses_soft, label=f"SOFT (α={a_s:.4f})")
+plt.plot(losses_hard, label=f"HARD (α={a_h:.4f})")
+plt.xlabel("Iteration"); plt.ylabel("Total Loss")
+plt.title("Training Loss: Soft vs Hard BC")
+plt.legend(); plt.grid(True, alpha=0.3); plt.show()
+
+# Boundary statistics (how well BC satisfied)
+stats_soft = evaluate_boundary_stats(model_soft_tr, data)
+stats_hard = evaluate_boundary_stats(model_hard_tr, data)
+print("\nBoundary |prediction| stats")
+print("SOFT : theta_mean={:.3e}, theta_max={:.3e}, w_mean={:.3e}, w_max={:.3e}".format(
+    stats_soft["theta_mean"], stats_soft["theta_max"], stats_soft["w_mean"], stats_soft["w_max"]))
+print("HARD : theta_mean={:.3e}, theta_max={:.3e}, w_mean={:.3e}, w_max={:.3e}".format(
+    stats_hard["theta_mean"], stats_hard["theta_max"], stats_hard["w_mean"], stats_hard["w_max"]))
+
+# Scatter plot at boundaries to visually compare
+plot_boundary_scatter([model_soft_tr, model_hard_tr], ["SOFT", "HARD"], data)
+
+
+
+
+
+@torch.no_grad()
+def predict_fields(model, x, t):
+    X = torch.cat([x, t], dim=1)
+    u = model(X); theta, w = split_theta_w(u)
+    return theta.cpu().numpy().ravel(), w.cpu().numpy().ravel()
+
+@torch.no_grad()
+def relative_L2(model, Nx=160, Nt=160):
+    xs = torch.linspace(0.0, np.pi, Nx, device=device).reshape(-1,1)
+    ts = torch.linspace(0.0, 1.0,   Nt, device=device).reshape(-1,1)
+    Xg, Tg = torch.meshgrid(xs.squeeze(), ts.squeeze(), indexing="ij")
+    X = Xg.reshape(-1,1); T = Tg.reshape(-1,1)
+    th, w = predict_fields(model, X, T)
+    th_ex = theta_exact_np(X.cpu().numpy(), T.cpu().numpy()).ravel()
+    w_ex  = w_exact_np(X.cpu().numpy(),   T.cpu().numpy()).ravel()
+    th_rel = np.linalg.norm(th - th_ex) / np.linalg.norm(th_ex)
+    w_rel  = np.linalg.norm(w  - w_ex ) / np.linalg.norm(w_ex )
+    return th_rel, w_rel
+
+@torch.no_grad()
+def error_maps(model, Nx=120, Nt=120):
+    xs = torch.linspace(0.0, np.pi, Nx, device=device).reshape(-1,1)
+    ts = torch.linspace(0.0, 1.0,   Nt, device=device).reshape(-1,1)
+    Xg, Tg = torch.meshgrid(xs.squeeze(), ts.squeeze(), indexing="ij")
+    X = Xg.reshape(-1,1); T = Tg.reshape(-1,1)
+    th, w = predict_fields(model, X, T)
+    th = th.reshape(Nx, Nt); w = w.reshape(Nx, Nt)
+    th_ex = theta_exact_np(X.cpu().numpy(), T.cpu().numpy()).reshape(Nx, Nt)
+    w_ex  = w_exact_np(X.cpu().numpy(),   T.cpu().numpy()).reshape(Nx, Nt)
+    return Xg.cpu().numpy(), Tg.cpu().numpy(), np.abs(th - th_ex), np.abs(w - w_ex)
+
+def show_heat(A, title):
+    plt.figure(figsize=(5,4))
+    plt.imshow(A.T, origin='lower', aspect='auto', extent=[0,np.pi,0,1])
+    plt.colorbar(); plt.xlabel("x"); plt.ylabel("t"); plt.title(title); plt.tight_layout(); plt.show()
+
+# Global Rel L2 (Soft vs Hard)
+thL2_s, wL2_s = relative_L2(model_soft_tr)
+thL2_h, wL2_h = relative_L2(model_hard_tr)
+print(f"[SOFT] θ L2={thL2_s:.3e}, w L2={wL2_s:.3e}")
+print(f"[HARD] θ L2={thL2_h:.3e}, w L2={wL2_h:.3e}")
+
+# Global Relative L2 error (Soft vs Hard)
+labels = ["θ rel L2", "w rel L2"]
+soft_vals = [thL2_s, wL2_s]
+hard_vals = [thL2_h, wL2_h]
+
+x = np.arange(len(labels))
+wbar = 0.35
+
+plt.figure()
+bars1 = plt.bar(x - wbar/2, soft_vals, wbar, label="SOFT")
+bars2 = plt.bar(x + wbar/2, hard_vals, wbar, label="HARD")
+plt.xticks(x, labels)
+plt.ylabel("Relative L2 error")
+plt.title("Global relative L2 error (Soft vs Hard)")
 plt.legend()
-plt.grid(True, alpha=0.3)
+plt.grid(True, axis='y', alpha=0.3)
+
+# 막대 위 값 표기
+for bars in (bars1, bars2):
+    for b in bars:
+        h = b.get_height()
+        plt.annotate(f"{h:.2e}", (b.get_x()+b.get_width()/2, h),
+                     textcoords="offset points", xytext=(0,3),
+                     ha='center', fontsize=8)
+
+plt.tight_layout()
 plt.show()
+
+
+# Heat Map
+_, _, e_th_s, e_w_s = error_maps(model_soft_tr)
+_, _, e_th_h, e_w_h = error_maps(model_hard_tr)
+show_heat(e_th_s, "Abs Error |θ| – SOFT"); show_heat(e_th_h, "Abs Error |θ| – HARD")
+show_heat(e_w_s,  "Abs Error |w| – SOFT");  show_heat(e_w_h,  "Abs Error |w| – HARD")
